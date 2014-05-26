@@ -4,7 +4,8 @@
 #include "rm_internal.h"
 #include <cstring>
 #include <cassert>
-
+#include <iostream>
+using namespace std;
 
 RM_FileHandle::RM_FileHandle  ()
 {
@@ -86,8 +87,9 @@ RC RM_FileHandle::InsertRec  (const char *pData, RID &rid)
     pageIdx = emptyPageList.front();
     pageNum = totalPageList[pageIdx];
     pfh_.GetThisPage(pageNum, pageHdl);
+//    cout << "insert on page with empty id "<< pageIdx << endl;
   }
-
+//  cout << "insert on page no "<< pageNum << endl;
   struct RM_FileRecPage * data;
   pageHdl.GetData((char *&)data);
   int i, j;
@@ -101,6 +103,7 @@ RC RM_FileHandle::InsertRec  (const char *pData, RID &rid)
       break;
     }
   SlotNum slotNum = i * 8 + j;
+//  cout << "slot number "<< slotNum << ", page number "<< pageNum << endl;
   assert(slotNum < recordPerPage);
 
   if(slotNum + 1 == recordPerPage){

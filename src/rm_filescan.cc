@@ -58,7 +58,8 @@ inline bool slotTaken(const unsigned char *bitmap, SlotNum slotNum){
     return false;
 }
 
-RC RM_FileScan::GetNextRec(RM_Record &rec)               // Get next matching record
+// Get next matching record
+RC RM_FileScan::GetNextRec(RM_Record &rec)               
 {
   PageNum vPage, pageNum;
   SlotNum slotNum;
@@ -85,7 +86,7 @@ RC RM_FileScan::GetNextRec(RM_Record &rec)               // Get next matching re
       rec.recordSize = rmFileHandle->recordSize;
       if(rec.data)
         free(rec.data);
-      printf("page number %d, slotNum %d\n", pageNum, slotNum);
+//      printf("page number %d, slotNum %d\n", pageNum, slotNum);
       rec.data = (char *)malloc(sizeof(char)*recordSize);
       memcpy(rec.data, &(data->data[slotNum * recordSize]), recordSize);
       rec.rid_ = RID(vPage, slotNum);

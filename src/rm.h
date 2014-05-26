@@ -21,11 +21,18 @@
 #include "redbase.h"
 #include "rm_rid.h"
 #include "pf.h"
+#include <string>
+#include <list>
+#include <vector>
+#include <map>
+using namespace std;
 
 //
 // RM_Record: RM Record interface
 //
 class RM_Record {
+  friend class RM_FileScan;
+  friend class RM_FileHandle;
 public:
     RM_Record ();
     ~RM_Record();
@@ -36,12 +43,18 @@ public:
 
     // Return the RID associated with the record
     RC GetRid (RID &rid) const;
+private:
+  int recordSize;
+  char *data;
+  RID rid_;
 };
 
 //
 // RM_FileHandle: RM File interface
 //
 class RM_FileHandle {
+  friend class RM_Manager;
+  friend class RM_FileScan;
 public:
     RM_FileHandle ();
     ~RM_FileHandle();
@@ -57,6 +70,20 @@ public:
     // Forces a page (along with any contents stored in this class)
     // from the buffer pool to disk.  Default value forces all pages.
     RC ForcePages (PageNum pageNum = ALL_PAGES);
+private:
+  bool fileOpen_;
+  PF_FileHandle pfh_;
+  string fileName_;
+  int recordSize;
+  int bitmapSize;
+  int recordPerPage;
+  int totalPage;
+  int totalEmptyPage;
+  bool headerUpdate;
+  vector<PageNum> totalPageList; // this is the actual page number
+  list<PageNum> emptyPageList; // this is the virtual page number
+  RC check_record_exist(const RID &, PageNum &, SlotNum &, 
+                        PageNum &, char*&) const;
 };
 
 //
@@ -76,6 +103,16 @@ public:
                   ClientHint pinHint = NO_HINT); // Initialize a file scan
     RC GetNextRec(RM_Record &rec);               // Get next matching record
     RC CloseScan ();                             // Close the scan
+private:
+  const RM_FileHandle *rmFileHandle;
+  AttrType attrType_;
+  int attrLength_;
+  int attrOffset_;
+  CompOp compOp_;
+  void *value_;
+  RID curScanId_;
+
+  SlotNum nextRecSlot(const unsigned char *bitmap, int bitmapSize, SlotNum start);
 };
 
 //
@@ -91,6 +128,12 @@ public:
     RC OpenFile   (const char *fileName, RM_FileHandle &fileHandle);
 
     RC CloseFile  (RM_FileHandle &fileHandle);
+private:
+  PF_Manager &pfm_;
+  map<string, int> openFile_;
+  RC install_page_list(const PF_FileHandle &, RM_FileHandle &, void *, bool);
+  RC write_back_total_page(RM_FileHandle &, void*, void *, bool);
+  RC recur_dispose_dir_page(RM_FileHandle &, PageNum);
 };
 
 //
@@ -98,4 +141,17 @@ public:
 //
 void RM_PrintError(RC rc);
 
+#define RM_EOF 1 //todo
 #endif
+
+#define RM_CREATE_FILE_RECORD_SIZE 1
+#define RM_DESTROY_FILE_WHILE_OPEN 2
+#define RM_OPEN_FILE_W_OPEN_HANDLE 3
+#define RM_CLOSE_FILE_W_CLOSED_HANDLE 4
+#define RM_CREATE_FILE_HDR_PAGE_WRITE_ERROR 5
+
+#define RM_OPEN_FILE_HDR_PAGE_ERROR 6
+
+#define RM_NOT_OPEN_FILE 10
+#define RM_REC_NO_EXIST 11
+#define RM_REC_LEN_NO_MATCH 12

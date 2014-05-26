@@ -34,7 +34,7 @@ using namespace std;
 #define STRLEN      29               // length of string in testrec
 #define PROG_UNIT   50               // how frequently to give progress
                                       //   reports when adding lots of recs
-#define FEW_RECS   20                // number of records added in
+#define FEW_RECS   200                // number of records added in
 #define MANY_RECS  200000           // stress test with many records
 #define HUGE_RECS  2000000
 //
@@ -66,11 +66,12 @@ RM_Manager rmm(pfm);
 RC Test1(void);
 RC Test2(void);
 RC Test3(void);
+RC Test4(void);
 
 void PrintError(RC rc);
 void LsFile(char *fileName);
 void PrintRecord(TestRec &recBuf);
-RC AddRecs(RM_FileHandle &fh, int numRecs);
+RC AddRecs(RM_FileHandle &fh, int numRecs, int offset = 0);
 RC VerifyFile(RM_FileHandle &fh, int numRecs);
 RC PrintFile(RM_FileHandle &fh);
 RC DumpFile(char *fileName);
@@ -87,12 +88,13 @@ RC GetNextRecScan(RM_FileScan &fs, RM_Record &rec);
 //
 // Array of pointers to the test functions
 //
-#define NUM_TESTS       3               // number of tests
+#define NUM_TESTS       4               // number of tests
 int (*tests[])() =                      // RC doesn't work on some compilers
 {
     Test1,
     Test2,
-    Test3
+    Test3,
+    Test4
 };
 
 //
@@ -205,7 +207,7 @@ void PrintRecord(TestRec &recBuf)
 //
 // Desc: Add a number of records to the file
 //
-RC AddRecs(RM_FileHandle &fh, int numRecs)
+RC AddRecs(RM_FileHandle &fh, int numRecs, int offset)
 {
     RC      rc;
     int     i;
@@ -222,9 +224,9 @@ RC AddRecs(RM_FileHandle &fh, int numRecs)
     printf("\nadding %d records\n", numRecs);
     for (i = 0; i < numRecs; i++) {
         memset(recBuf.str, ' ', STRLEN);
-        sprintf(recBuf.str, "a%d", i);
-        recBuf.num = i;
-        recBuf.r = (float)i;
+        sprintf(recBuf.str, "a%d", i + offset);
+        recBuf.num = i + offset;
+        recBuf.r = (float)(i+offset);
         if ((rc = InsertRec(fh, (char *)&recBuf, rid)) ||
             (rc = rid.GetPageNum(pageNum)) ||
             (rc = rid.GetSlotNum(slotNum)))
@@ -293,7 +295,7 @@ RC VerifyFile(RM_FileHandle &fh, int numRecs)
         if (found[pRecBuf->num]) {
             printf("VerifyFile: duplicate record = [%s, %d, %f]\n",
                    pRecBuf->str, pRecBuf->num, pRecBuf->r);
-            exit(1);
+//            exit(1);
         }
 
         found[pRecBuf->num] = 1;
@@ -543,4 +545,40 @@ RC Test3(void)
   printf("test3 starting ************\n");
   printf("test3 done **************\n");
   return (0);
+}
+
+RC Test4(void)
+{
+    RC            rc;
+    RM_FileHandle fh;
+
+    printf("test4 starting ****************\n");
+
+    if ((rc = CreateFile(FILENAME, sizeof(TestRec))) ) {
+      cerr << "xxxx cannot create " <<FILENAME <<endl;
+      return (rc); 
+    }
+    int round = MANY_RECS/FEW_RECS;
+    for(int i=0; i<round; ++i) {
+//      cout << "round "<< i << endl;
+      if ((rc = OpenFile(FILENAME, fh)) ||
+        (rc = AddRecs(fh, FEW_RECS, i*FEW_RECS)) ||
+        (rc = CloseFile(FILENAME, fh))) {
+        cerr<< "xxxx cannot insert in round "<< i << endl;
+        return (rc);
+      }
+    }
+
+    LsFile(FILENAME);
+
+    rc = OpenFile(FILENAME, fh);
+//    DumpFile(FILENAME);
+    rc = VerifyFile(fh, MANY_RECS); 
+    rc = CloseFile(FILENAME, fh);
+
+    if ((rc = DestroyFile(FILENAME)))
+        return (rc);
+
+    printf("\ntest4 done ********************\n");
+    return (0);
 }

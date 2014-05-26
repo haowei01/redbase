@@ -54,7 +54,7 @@ RC RM_Manager::CreateFile (const char *fileName, int recordSize)
   hdr.nextPageDir = END_PAGE_LIST;
   hdr.nextEmptyPageDir = END_PAGE_LIST;
 
-  memcpy(page, (const char *)&hdr, PF_PAGE_SIZE);
+  memcpy(page, &hdr, PF_PAGE_SIZE);
   
   fileHandle.MarkDirty(pageNum);
   fileHandle.UnpinPage(pageNum);
@@ -102,7 +102,7 @@ RC RM_Manager::OpenFile   (const char *fileName, RM_FileHandle &fileHandle)
   fileHandle.recordPerPage = (PF_PAGE_SIZE - MAX_BITMAP_SIZE)/data->recordSize;
   printf("++ recordPerPage %d\n", fileHandle.recordPerPage);
   fileHandle.bitmapSize = fileHandle.recordPerPage/8;
-  if(fileHandle.recordPerPage & 7)
+  if(fileHandle.recordPerPage & 0x7)
     fileHandle.bitmapSize += 1;
   fileHandle.totalPage = data->totalPage;
   fileHandle.totalEmptyPage = data->totalEmptyPage;
@@ -163,9 +163,28 @@ int RM_Manager::install_page_list(const PF_FileHandle &pfh,
   return OK_RC;
 }
 
-RC RM_Manager::write_back_total_page(RM_FileHandle & fileHandle, 
-                                    void * fileHdrP, bool emptyPage)
+RC RM_Manager::recur_dispose_dir_page(RM_FileHandle & fileHandle, 
+                                      PageNum dirPageNum)
 {
+  PF_PageHandle dirPage;
+  PageNum nextPageNum;
+  while(dirPageNum != END_PAGE_LIST) {
+//    printf("recursive close\n");
+    fileHandle.pfh_.GetThisPage(dirPageNum, dirPage);
+    struct RM_FilePageDirPage * data;
+    dirPage.GetData((char *&)data);
+    nextPageNum = data->nextPageDir;
+    fileHandle.pfh_.UnpinPage(dirPageNum);
+    fileHandle.pfh_.DisposePage(dirPageNum);
+    dirPageNum = nextPageNum;
+  }
+  return OK_RC;
+}
+
+RC RM_Manager::write_back_total_page(RM_FileHandle & fileHandle, 
+               void *hdrPage, void * fileHdrP, bool emptyPage)
+{
+  struct RM_FileHeaderPage *oldHdr = (struct RM_FileHeaderPage *)hdrPage;
   struct RM_FileHeaderPage & fileHdr = *((struct RM_FileHeaderPage *)fileHdrP);
 
   const vector<PageNum> & totalPageList = fileHandle.totalPageList;
@@ -174,26 +193,49 @@ RC RM_Manager::write_back_total_page(RM_FileHandle & fileHandle,
 
   PF_PageHandle thisOverFlow, nextOverFlow;
   PageNum thisOverFlowNum, nextOverFlowNum;
+  bool allocateNewPage = false;
 
   assert(size_t(fileHandle.totalPage) == totalPageList.size());
   if(emptyPage) {
-    if(fileHandle.totalEmptyPage <= int(PAGE_DIR_LIST_SIZE)) {
+    if(fileHandle.totalEmptyPage <= int(HEADER_LIST_HALF)) {
       fileHdr.emptyPageOnThis = fileHandle.totalEmptyPage;
       fileHdr.nextEmptyPageDir = END_PAGE_LIST;
+      //check if hdr page needs to be truncated
+      if(oldHdr->nextEmptyPageDir != END_PAGE_LIST)
+        recur_dispose_dir_page(fileHandle, oldHdr->nextEmptyPageDir);
     } else {
       fileHdr.emptyPageOnThis = HEADER_LIST_HALF;
-      fileHandle.pfh_.AllocatePage(thisOverFlow);
-      thisOverFlow.GetPageNum(thisOverFlowNum);
+      // check to use previous dir pages
+      if(oldHdr->nextEmptyPageDir == END_PAGE_LIST) {
+        fileHandle.pfh_.AllocatePage(thisOverFlow);
+        thisOverFlow.GetPageNum(thisOverFlowNum);
+        allocateNewPage = true;
+      } else {
+        fileHandle.pfh_.GetThisPage(oldHdr->nextEmptyPageDir, thisOverFlow);
+        thisOverFlowNum = oldHdr->nextEmptyPageDir;
+      }
       fileHdr.nextEmptyPageDir =   thisOverFlowNum;
     }
   } else {
-    if(fileHandle.totalPage <= int(PAGE_DIR_LIST_SIZE)) {
+    if(fileHandle.totalPage <= int(HEADER_LIST_HALF)) {
+//      printf("++++++ No need to expand\n");
       fileHdr.pageOnThis = fileHandle.totalPage;
       fileHdr.nextPageDir = END_PAGE_LIST;
+      //check if hdr page needs truncated
+      if(oldHdr->nextPageDir != END_PAGE_LIST)
+        recur_dispose_dir_page(fileHandle, oldHdr->nextPageDir);
     } else {
+//      printf("++++++++++ Need to expand\n");
       fileHdr.pageOnThis = HEADER_LIST_HALF;
-      fileHandle.pfh_.AllocatePage(thisOverFlow);
-      thisOverFlow.GetPageNum(thisOverFlowNum);
+      // check to see if we can use previous dir pages
+      if(oldHdr->nextPageDir == END_PAGE_LIST) {
+        fileHandle.pfh_.AllocatePage(thisOverFlow);
+        thisOverFlow.GetPageNum(thisOverFlowNum);
+        allocateNewPage = true;
+      } else {
+        fileHandle.pfh_.GetThisPage(oldHdr->nextPageDir, thisOverFlow);
+        thisOverFlowNum = oldHdr->nextPageDir;
+      }
       fileHdr.nextPageDir =   thisOverFlowNum;
     }
   }
@@ -229,11 +271,23 @@ RC RM_Manager::write_back_total_page(RM_FileHandle & fileHandle,
     leftOver -= data->pageListSize;
     beginIdx += data->pageListSize;
     if(!leftOver) {
+      //check to see if need to dispose
+      if(!allocateNewPage && data->nextPageDir != END_PAGE_LIST) {
+        printf("recursive close %x\n", emptyPage);
+        recur_dispose_dir_page(fileHandle, data->nextPageDir);
+      }
       data->nextPageDir = END_PAGE_LIST;
     } else {
-      fileHandle.pfh_.AllocatePage(nextOverFlow);
-      nextOverFlow.GetPageNum(nextOverFlowNum);
-      data->nextPageDir = nextOverFlowNum;
+      // check to see if can reuse
+      if(allocateNewPage || data->nextPageDir == END_PAGE_LIST) {
+        fileHandle.pfh_.AllocatePage(nextOverFlow);
+        nextOverFlow.GetPageNum(nextOverFlowNum);
+        data->nextPageDir = nextOverFlowNum;
+        allocateNewPage = true;
+      } else {
+        fileHandle.pfh_.GetThisPage(data->nextPageDir, nextOverFlow);
+        nextOverFlowNum = data->nextPageDir;
+      }
     }
     fileHandle.pfh_.MarkDirty(thisOverFlowNum);
     fileHandle.pfh_.UnpinPage(thisOverFlowNum);
@@ -259,19 +313,20 @@ RC RM_Manager::CloseFile (RM_FileHandle &fileHandle)
   if(fileHandle.headerUpdate) {
     PF_PageHandle hdrPage; 
     fileHandle.pfh_.GetFirstPage(hdrPage);
+    char * hdrPageData;
+    hdrPage.GetData(hdrPageData);   
+
     struct RM_FileHeaderPage fileHdr;
     fileHdr.recordSize = fileHandle.recordSize;
     fileHdr.totalPage = fileHandle.totalPage;
     fileHdr.totalEmptyPage = fileHandle.totalEmptyPage;
  
     //write total page list
-    write_back_total_page(fileHandle, &fileHdr, false);
+    write_back_total_page(fileHandle, hdrPageData, &fileHdr, false);
     //write empty page list
-    write_back_total_page(fileHandle, &fileHdr, true); 
+    write_back_total_page(fileHandle, hdrPageData, &fileHdr, true); 
 
-    char * data;
-    hdrPage.GetData(data);
-    memcpy(data, (const char *)&fileHdr, PF_PAGE_SIZE);
+    memcpy(hdrPageData, &fileHdr, PF_PAGE_SIZE);
 
     PageNum pageNum;
     hdrPage.GetPageNum(pageNum);

@@ -10,6 +10,8 @@
 //
 // Globally-useful defines
 //
+#define MIN_RECORD_SIZE 32  //minimum record size, 20 Byte
+#define MAX_BITMAP_SIZE 16  //maximum bitmap size
 #define MAXNAME       24                // maximum length of a relation
                                         // or attribute name
 #define MAXSTRINGLEN  255               // maximum length of a
