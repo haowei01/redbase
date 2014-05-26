@@ -24,18 +24,19 @@
 #include "redbase.h"
 #include "pf.h"
 #include "rm.h"
-
+#include "rm_internal.h"
 using namespace std;
 
 //
 // Defines
 //
-#define FILENAME   "testrel"         // test file name
+#define FILENAME   (char*)("testrel")         // test file name
 #define STRLEN      29               // length of string in testrec
 #define PROG_UNIT   50               // how frequently to give progress
                                       //   reports when adding lots of recs
 #define FEW_RECS   20                // number of records added in
-
+#define MANY_RECS  200000           // stress test with many records
+#define HUGE_RECS  2000000
 //
 // Computes the offset of a field in a record (should be in <stddef.h>)
 //
@@ -50,6 +51,7 @@ struct TestRec {
     char  str[STRLEN];
     int   num;
     float r;
+//    char data[4000];
 };
 
 //
@@ -63,6 +65,7 @@ RM_Manager rmm(pfm);
 //
 RC Test1(void);
 RC Test2(void);
+RC Test3(void);
 
 void PrintError(RC rc);
 void LsFile(char *fileName);
@@ -70,6 +73,7 @@ void PrintRecord(TestRec &recBuf);
 RC AddRecs(RM_FileHandle &fh, int numRecs);
 RC VerifyFile(RM_FileHandle &fh, int numRecs);
 RC PrintFile(RM_FileHandle &fh);
+RC DumpFile(char *fileName);
 
 RC CreateFile(char *fileName, int recordSize);
 RC DestroyFile(char *fileName);
@@ -83,11 +87,12 @@ RC GetNextRecScan(RM_FileScan &fs, RM_Record &rec);
 //
 // Array of pointers to the test functions
 //
-#define NUM_TESTS       2               // number of tests
+#define NUM_TESTS       3               // number of tests
 int (*tests[])() =                      // RC doesn't work on some compilers
 {
     Test1,
-    Test2
+    Test2,
+    Test3
 };
 
 //
@@ -316,6 +321,25 @@ err:
     return (rc);
 }
 
+RC DumpFile(char *fileName)
+{
+  PF_FileHandle pf;
+  PF_PageHandle ph;
+  pfm.OpenFile(fileName, pf);
+  pf.GetFirstPage(ph);
+  struct RM_FileHeaderPage *data;
+  ph.GetData((char * &) data);
+  printf("+++ Dump Page +++\n"); 
+  printf("++ record size %d\n", data->recordSize);
+  printf("++ next page dir %d\n", data->nextPageDir);
+  printf("++ const %d\n", END_PAGE_LIST);
+  printf("total page %d\n", data->totalPage);
+  printf("first data page %d\n", data->totalPageList[0]);
+  printf("total empty page %d\n", data->totalEmptyPage);
+  printf("first empty page idx %d\n", data->emptyPageList[0]);
+  pfm.CloseFile(pf);
+}
+
 //
 // PrintFile
 //
@@ -465,6 +489,7 @@ RC Test1(void)
         return (rc);
 
     LsFile(FILENAME);
+    DumpFile(FILENAME);
 
     if ((rc = DestroyFile(FILENAME)))
         return (rc);
@@ -491,9 +516,31 @@ RC Test2(void)
 
     LsFile(FILENAME);
 
+    rc = OpenFile(FILENAME, fh);
+    DumpFile(FILENAME);
+    rc = VerifyFile(fh, FEW_RECS); 
+    rc = CloseFile(FILENAME, fh);
+
     if ((rc = DestroyFile(FILENAME)))
         return (rc);
 
     printf("\ntest2 done ********************\n");
     return (0);
+}
+
+RC Test3(void)
+{
+  RM_FileHandle fh;
+  printf("RC: %d destroy nonexist\n", DestroyFile(FILENAME));
+  printf("RC: %d create record too big\n", CreateFile(FILENAME, 10000));
+  printf("RC: %d create normal\n", CreateFile(FILENAME, sizeof(TestRec)));
+  printf("RC: %d create same name\n", CreateFile(FILENAME, sizeof(TestRec)));
+  printf("RC: %d open file normal\n", OpenFile(FILENAME, fh));
+  printf("RC: %d destroy file when it is open\n", DestroyFile(FILENAME));
+  CloseFile(FILENAME, fh);
+  printf("RC: %d close twice\n", CloseFile(FILENAME, fh));
+  printf("RC: %d destroy normal\n", DestroyFile(FILENAME));
+  printf("test3 starting ************\n");
+  printf("test3 done **************\n");
+  return (0);
 }
