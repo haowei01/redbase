@@ -33,8 +33,43 @@ struct RM_FileRecPage {
 
 inline bool slotTaken(struct RM_FileRecPage * data, int slotNum)
 {
-  int i = slotNum / 8;
+  int i = slotNum >> 3;
   int j = slotNum & 7;
   return ((data->bitmap[i]) >> j) & 1;
+}
+
+inline void setEmptySlot(RM_FileRecPage * data, int i, int j)
+{
+  data->bitmap[i] |= 1 << j;
+}
+
+inline void setEmptySlot(RM_FileRecPage * data, int slotNum)
+{
+  setEmptySlot(data, slotNum >> 3, slotNum & 0x7);
+}
+
+inline bool findFirstEmptySlot(struct RM_FileRecPage * data, 
+                        int &slotNum, int startSlotNum = 0)
+{
+  int i = startSlotNum >> 3;
+  int j = startSlotNum & 0x7;
+  for(; j < 8; ++j)
+    if((((data->bitmap[i]) >> j) & 1) == 0){
+      slotNum = i * 8 + j;
+      return true;
+    }
+  for(++i; i < 16; ++i)
+    if( data->bitmap[i] != 0xff)
+      break;
+  if(i == 16) {
+    slotNum = i * 8;
+    return false;
+  }
+  for(j = 0; j < 8; ++j)
+    if( (((data->bitmap[i]) >> j) & 1) == 0 ){
+      slotNum = i * 8 + j;
+      return true;
+    }
+  return false;  
 }
 

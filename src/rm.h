@@ -70,6 +70,7 @@ public:
     // Forces a page (along with any contents stored in this class)
     // from the buffer pool to disk.  Default value forces all pages.
     RC ForcePages (PageNum pageNum = ALL_PAGES);
+    inline int GetRecordPerPage() const { return recordPerPage; }
 private:
   bool fileOpen_;
   PF_FileHandle pfh_;
@@ -109,10 +110,15 @@ private:
   int attrLength_;
   int attrOffset_;
   CompOp compOp_;
-  void *value_;
+  char buf[MAXSTRINGLEN + 1];
   RID curScanId_;
-
+  int intVal_;
+  float floatVal_;
+  string stringVal_;
+  bool check_scan_cond(char *recData);
   SlotNum nextRecSlot(const unsigned char *bitmap, int bitmapSize, SlotNum start);
+  template<typename DataType>
+  bool check_scan_data_cond(const DataType attr, const DataType value);
 };
 
 //

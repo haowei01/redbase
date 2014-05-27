@@ -100,7 +100,7 @@ RC RM_Manager::OpenFile   (const char *fileName, RM_FileHandle &fileHandle)
   }
   fileHandle.recordSize = data->recordSize;
   fileHandle.recordPerPage = (PF_PAGE_SIZE - MAX_BITMAP_SIZE)/data->recordSize;
-  printf("++ recordPerPage %d\n", fileHandle.recordPerPage);
+//  printf("++ recordPerPage %d\n", fileHandle.recordPerPage);
   fileHandle.bitmapSize = fileHandle.recordPerPage/8;
   if(fileHandle.recordPerPage & 0x7)
     fileHandle.bitmapSize += 1;

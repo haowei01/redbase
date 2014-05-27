@@ -67,6 +67,9 @@ RC Test1(void);
 RC Test2(void);
 RC Test3(void);
 RC Test4(void);
+RC Test5(void);
+
+int dummyInt;
 
 void PrintError(RC rc);
 void LsFile(char *fileName);
@@ -74,7 +77,7 @@ void PrintRecord(TestRec &recBuf);
 RC AddRecs(RM_FileHandle &fh, int numRecs, int offset = 0);
 RC VerifyFile(RM_FileHandle &fh, int numRecs);
 RC PrintFile(RM_FileHandle &fh);
-RC DumpFile(char *fileName);
+RC DumpFile(char *fileName, int & totalPages = dummyInt);
 
 RC CreateFile(char *fileName, int recordSize);
 RC DestroyFile(char *fileName);
@@ -215,6 +218,7 @@ RC AddRecs(RM_FileHandle &fh, int numRecs, int offset)
     RID     rid;
     PageNum pageNum;
     SlotNum slotNum;
+    RM_Record check;
 
     // We set all of the TestRec to be 0 initially.  This heads off
     // warnings that Purify will give regarding UMR since sizeof(TestRec)
@@ -229,7 +233,8 @@ RC AddRecs(RM_FileHandle &fh, int numRecs, int offset)
         recBuf.r = (float)(i+offset);
         if ((rc = InsertRec(fh, (char *)&recBuf, rid)) ||
             (rc = rid.GetPageNum(pageNum)) ||
-            (rc = rid.GetSlotNum(slotNum)))
+            (rc = rid.GetSlotNum(slotNum)) || 
+            (rc = fh.GetRec(rid, check)) )
             return (rc);
 
         if ((i + 1) % PROG_UNIT == 0){
@@ -260,6 +265,7 @@ RC VerifyFile(RM_FileHandle &fh, int numRecs)
     char      stringBuf[STRLEN];
     char      *found;
     RM_Record rec;
+    int scanCount = 0;
 
     found = new char[numRecs];
     memset(found, 0, numRecs);
@@ -295,14 +301,16 @@ RC VerifyFile(RM_FileHandle &fh, int numRecs)
         if (found[pRecBuf->num]) {
             printf("VerifyFile: duplicate record = [%s, %d, %f]\n",
                    pRecBuf->str, pRecBuf->num, pRecBuf->r);
-//            exit(1);
+            exit(1);
         }
 
         found[pRecBuf->num] = 1;
+        scanCount ++;
     }
 
     if (rc != RM_EOF)
         goto err;
+    printf("++++ Total Scanned %d\n", scanCount);
 
     if ((rc=fs.CloseScan()))
         return (rc);
@@ -323,7 +331,7 @@ err:
     return (rc);
 }
 
-RC DumpFile(char *fileName)
+RC DumpFile(char *fileName, int & totalPages )
 {
   PF_FileHandle pf;
   PF_PageHandle ph;
@@ -336,6 +344,7 @@ RC DumpFile(char *fileName)
   printf("++ next page dir %d\n", data->nextPageDir);
   printf("++ const %d\n", END_PAGE_LIST);
   printf("total page %d\n", data->totalPage);
+  totalPages = data->totalPage;
   printf("first data page %d\n", data->totalPageList[0]);
   printf("total empty page %d\n", data->totalEmptyPage);
   printf("first empty page idx %d\n", data->emptyPageList[0]);
@@ -522,6 +531,34 @@ RC Test2(void)
     DumpFile(FILENAME);
     rc = VerifyFile(fh, FEW_RECS); 
     rc = CloseFile(FILENAME, fh);
+    
+    printf("**** delete one record and then scan\n");
+    int recordPerPage = fh.GetRecordPerPage();
+    RID deleteId(0, recordPerPage - 1);
+    if( (rc = fh.DeleteRec(deleteId)) == 0 ){
+      printf("Cannot delete while file close\n");
+      exit(1);
+    }
+    rc = OpenFile(FILENAME, fh);
+    for(int i=0; i < recordPerPage; ++ i) {
+      deleteId = RID(0, i);
+      if( (rc = fh.DeleteRec(deleteId)) != 0 ){
+        printf("delete last record on one page failed\n");
+        exit(1);
+      }
+    }
+    RM_FileScan fs;
+    RM_Record rec;
+    rc=fs.OpenScan(fh,INT,sizeof(int),offsetof(TestRec, num),
+                        NO_OP, NULL, NO_HINT);
+    for(int i=0; i<FEW_RECS - recordPerPage ; ++ i) {
+      rc = fs.GetNextRec(rec);
+      if( rc != 0) {
+        printf("scan fail at %d th scan\n", i);
+        exit(1);
+      }
+    }
+    rc = CloseFile(FILENAME, fh);
 
     if ((rc = DestroyFile(FILENAME)))
         return (rc);
@@ -533,15 +570,55 @@ RC Test2(void)
 RC Test3(void)
 {
   RM_FileHandle fh;
-  printf("RC: %d destroy nonexist\n", DestroyFile(FILENAME));
-  printf("RC: %d create record too big\n", CreateFile(FILENAME, 10000));
-  printf("RC: %d create normal\n", CreateFile(FILENAME, sizeof(TestRec)));
-  printf("RC: %d create same name\n", CreateFile(FILENAME, sizeof(TestRec)));
-  printf("RC: %d open file normal\n", OpenFile(FILENAME, fh));
-  printf("RC: %d destroy file when it is open\n", DestroyFile(FILENAME));
+  RC rc;
+  if((rc = DestroyFile(FILENAME)) != 0)
+  	printf("RC: %d destroy nonexist\n", rc);
+  else
+    exit(1);
+
+  if( (rc = CreateFile(FILENAME, 10000)) != 0)
+  	printf("RC: %d create record too big\n", rc);
+  else
+    exit(1);
+
+  if((rc = CreateFile(FILENAME, sizeof(TestRec))) == 0)
+  	printf("RC: %d create normal\n", rc);
+	else
+    exit(1);
+
+  if( (rc = CreateFile(FILENAME, sizeof(TestRec))) != 0)
+    printf("RC: %d create same name\n", rc);
+  else
+    exit(1);
+
+  if( (rc =OpenFile(FILENAME, fh) ) == 0 )
+    printf("RC: %d open file normal\n", rc);
+  else
+    exit(1);
+
+  RID no_exist_id( 1, 1);
+  RM_Record rec;
+  if( (rc = fh.GetRec(no_exist_id, rec ) ) != 0 )
+    printf("RC: %d Get No Exist Record\n", rc);
+  else
+    exit(1);
+
+  if( (rc = DestroyFile(FILENAME)) != 0)
+    printf("RC: %d destroy file when it is open\n", rc);
+  else
+    exit(1);
   CloseFile(FILENAME, fh);
-  printf("RC: %d close twice\n", CloseFile(FILENAME, fh));
-  printf("RC: %d destroy normal\n", DestroyFile(FILENAME));
+
+  if( (rc = CloseFile(FILENAME, fh)) != 0)
+    printf("RC: %d close twice\n", rc);
+  else
+    exit(1);
+
+  if( (rc =DestroyFile(FILENAME) ) == 0)
+    printf("RC: %d destroy normal\n", rc);
+  else
+    exit(1);
+
   printf("test3 starting ************\n");
   printf("test3 done **************\n");
   return (0);
@@ -571,14 +648,57 @@ RC Test4(void)
 
     LsFile(FILENAME);
 
+    int totalPages;
     rc = OpenFile(FILENAME, fh);
-//    DumpFile(FILENAME);
-    rc = VerifyFile(fh, MANY_RECS); 
+    DumpFile(FILENAME, totalPages);
+    rc = VerifyFile(fh, MANY_RECS);
+
+    printf("**** check delete\n");
+    for(int i=0; i<totalPages; ++i) {
+      RID deleteId(i, 0);
+      if((rc = fh.DeleteRec(deleteId)) != 0) {
+        printf("Cannot delete Record at VPage %d\n", i);
+        exit(1);
+      }
+    }
     rc = CloseFile(FILENAME, fh);
 
+    // check if delete persistent
+    rc = OpenFile(FILENAME, fh);
+    RM_Record rec;
+    for(int i=0; i<totalPages; ++i) {
+      RID deleteId(i, 0);
+      if((rc = fh.GetRec(deleteId, rec)) == 0) {
+        printf("Delete Record at VPage %d did not success\n", i);
+        exit(1);
+      }
+    }
+    // check if the delted slot is usable for insert
+    TestRec recBuf;
+    bool insertToDelted = false;
+    for(int i=0; i<totalPages; ++i) {
+      RID insertId;
+      if(fh.InsertRec((const char *) &recBuf, insertId) != 0){
+        printf("cannot insert into deleted empty slot\n");
+        exit(1);
+      }
+      int pageNum, slotNum;
+      insertId.GetPageNum(pageNum);
+      if(pageNum == 0) {
+        insertToDelted = true;
+        printf("**** Begin to check Insert To Delted Position\n");
+      }
+      insertId.GetSlotNum(slotNum);
+      if(insertToDelted && slotNum != 0) {
+        printf("Insert Record at VPage %d, Slot %d\n", pageNum, slotNum);
+        exit(1);
+      }
+    } 
+    rc = CloseFile(FILENAME, fh);
     if ((rc = DestroyFile(FILENAME)))
         return (rc);
 
+    printf("sizeof float %d\n", sizeof(float));
     printf("\ntest4 done ********************\n");
     return (0);
 }

@@ -92,21 +92,17 @@ RC RM_FileHandle::InsertRec  (const char *pData, RID &rid)
 //  cout << "insert on page no "<< pageNum << endl;
   struct RM_FileRecPage * data;
   pageHdl.GetData((char *&)data);
-  int i, j;
-  for(i = 0; i<bitmapSize; ++i) {
-    if(data->bitmap[i] != 0xff)
-      break;
-  }
-  for(j = 0; j<8; ++j)
-    if( ((data->bitmap[i] >> j) & 1) == 0){
-      data->bitmap[i] |= (1 << j);
-      break;
-    }
-  SlotNum slotNum = i * 8 + j;
+
+  SlotNum slotNum;
+  assert(findFirstEmptySlot(data, slotNum));
+  setEmptySlot(data, slotNum);
+
 //  cout << "slot number "<< slotNum << ", page number "<< pageNum << endl;
   assert(slotNum < recordPerPage);
 
-  if(slotNum + 1 == recordPerPage){
+  SlotNum nextSlotNum;
+  if(!findFirstEmptySlot(data, nextSlotNum, slotNum) 
+     || nextSlotNum >= recordPerPage){
     emptyPageList.pop_front();
     --totalEmptyPage;
     headerUpdate = true;
@@ -190,7 +186,6 @@ RC RM_FileHandle::UpdateRec  (const RM_Record &rec)
     // from the buffer pool to disk.  Default value forces all pages.
 RC RM_FileHandle::ForcePages (PageNum pageNum)
 {
-  pfh_.ForcePages(pageNum);
-  return OK_RC;
+  return pfh_.ForcePages(pageNum);
 }
 
