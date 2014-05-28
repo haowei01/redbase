@@ -105,6 +105,7 @@ public:
     RC GetNextRec(RM_Record &rec);               // Get next matching record
     RC CloseScan ();                             // Close the scan
 private:
+  bool scanOpen_;
   const RM_FileHandle *rmFileHandle;
   AttrType attrType_;
   int attrLength_;
@@ -147,7 +148,7 @@ private:
 //
 void RM_PrintError(RC rc);
 
-#define RM_EOF 1 //todo
+#define RM_EOF 21 //todo
 #endif
 
 #define RM_CREATE_FILE_RECORD_SIZE 1
@@ -157,7 +158,14 @@ void RM_PrintError(RC rc);
 #define RM_CREATE_FILE_HDR_PAGE_WRITE_ERROR 5
 
 #define RM_OPEN_FILE_HDR_PAGE_ERROR 6
+#define RM_RM_ERROR_END 6
 
-#define RM_NOT_OPEN_FILE 10
-#define RM_REC_NO_EXIST 11
-#define RM_REC_LEN_NO_MATCH 12
+#define RM_NOT_OPEN_FILE 11
+#define RM_REC_NO_EXIST 12
+#define RM_REC_LEN_NO_MATCH 13
+#define RM_FH_ERROR_END 13
+
+#define RM_SCAN_NOT_OPEN 22
+#define RM_SCAN_REOPEN 23
+#define RM_SCAN_NEED_VALUE 24
+#define RM_SCAN_ERROR_END 24

@@ -5,7 +5,7 @@
 #include "rm.h"
 #include "rm_internal.h"
 
-RM_FileScan::RM_FileScan  ()
+RM_FileScan::RM_FileScan  ():scanOpen_(false)
 {
 }
 
@@ -21,21 +21,33 @@ RC RM_FileScan::OpenScan  (const RM_FileHandle &fileHandle,
                   void       *value,
                   ClientHint pinHint) // Initialize a file scan
 {
+  if(!fileHandle.fileOpen_)
+    return RM_NOT_OPEN_FILE;
+  if(scanOpen_)
+    return RM_SCAN_REOPEN;
+
   rmFileHandle = &fileHandle;
   attrType_ = attrType;
   attrLength_ = attrLength;
   assert(attrLength <= MAXSTRINGLEN);
   attrOffset_ = attrOffset;
-  compOp_ = compOp_;
+  compOp_ = compOp;
+  if(value == NULL && compOp != NO_OP)
+    return RM_SCAN_NEED_VALUE;
+
   if(value != NULL) {
     memcpy(buf, value, attrLength);
     switch (attrType) {
-      case INT: intVal_ = *(int *)buf; break;
+      case INT: intVal_ = *(int *)buf; 
+//                printf("....scan value %d\n", intVal_);
+                break;
       case FLOAT: floatVal_ = *(float *)buf; break;
       case STRING: stringVal_ = string(buf, attrLength_); break;
     }
   }
-  RID curScanId_ = RID(0, 0);
+  curScanId_ = RID(0, 0);
+  scanOpen_ = true;
+
   return OK_RC;
 }
 
@@ -75,11 +87,15 @@ bool RM_FileScan::check_scan_data_cond(const DataType attr,const DataType value)
 
 bool RM_FileScan::check_scan_cond(char *recData)
 {
+  if(compOp_ == NO_OP)
+    return true;
+
   int recInt;
   float recFloat;
   string recString;
   switch(attrType_) {
     case INT: recInt = *(int *) &recData[attrOffset_];
+//              printf(".... check rec value %d\n", recInt);
               return check_scan_data_cond(recInt, intVal_);
     case FLOAT: recFloat = *(float *) &recData[attrOffset_];
               return check_scan_data_cond(recFloat, floatVal_);
@@ -92,6 +108,14 @@ bool RM_FileScan::check_scan_cond(char *recData)
 // Get next matching record
 RC RM_FileScan::GetNextRec(RM_Record &rec)               
 {
+  if(!scanOpen_)
+    return RM_SCAN_NOT_OPEN;
+  
+  if(!rmFileHandle->fileOpen_) {
+    this->CloseScan();
+    return RM_NOT_OPEN_FILE;
+  }
+
   PageNum vPage, pageNum;
   SlotNum slotNum;
   curScanId_.GetPageNum(vPage);
@@ -151,5 +175,9 @@ RC RM_FileScan::GetNextRec(RM_Record &rec)
 }
 RC RM_FileScan::CloseScan ()                             // Close the scan
 {
+  if(!scanOpen_)
+    return RM_SCAN_NOT_OPEN;
+  
+  scanOpen_ = false;
   return OK_RC;
 }

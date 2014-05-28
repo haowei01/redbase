@@ -91,13 +91,14 @@ RC GetNextRecScan(RM_FileScan &fs, RM_Record &rec);
 //
 // Array of pointers to the test functions
 //
-#define NUM_TESTS       4               // number of tests
+#define NUM_TESTS       5               // number of tests
 int (*tests[])() =                      // RC doesn't work on some compilers
 {
     Test1,
     Test2,
     Test3,
-    Test4
+    Test4,
+    Test5
 };
 
 //
@@ -700,5 +701,109 @@ RC Test4(void)
 
     printf("sizeof float %d\n", sizeof(float));
     printf("\ntest4 done ********************\n");
+    return (0);
+}
+
+//
+// Test5 tests various scan condition
+//
+RC Test5(void)
+{
+    RC            rc;
+    RM_FileHandle fh;
+
+    printf("test5 starting ****************\n");
+
+    if ((rc = CreateFile(FILENAME, sizeof(TestRec))) ||
+        (rc = OpenFile(FILENAME, fh)) ||
+        (rc = AddRecs(fh, FEW_RECS)) ||
+        (rc = CloseFile(FILENAME, fh)))
+        return (rc);
+
+    LsFile(FILENAME);
+
+    rc = OpenFile(FILENAME, fh);
+    DumpFile(FILENAME);
+    rc = VerifyFile(fh, FEW_RECS); 
+    rc = CloseFile(FILENAME, fh);
+
+    rc = OpenFile(FILENAME, fh);
+
+    RM_FileScan fs;
+    RM_Record rec;
+
+    int scanCount = 0;
+    int equal_val = 1;
+    printf("********* check equal scan\n");
+    rc = fs.OpenScan(fh, INT, sizeof(int), offsetof(TestRec, num), 
+                    EQ_OP, &equal_val, NO_HINT);
+    for(int i=0; i<FEW_RECS && fs.GetNextRec(rec) == 0; ++i)
+      ++scanCount;
+
+    fs.CloseScan();
+    if(scanCount != 1) {
+      cout << "equal scan fail, scanCount " << scanCount << endl;
+      exit(1);
+    }
+    
+    printf("********* check less than scan\n");
+    int lt_val = FEW_RECS/2;
+    scanCount = 0;
+    rc = fs.OpenScan(fh, INT, sizeof(int), offsetof(TestRec, num), 
+                    LT_OP, &lt_val, NO_HINT);
+    for(int i=0; i<FEW_RECS && fs.GetNextRec(rec) == 0; ++i)
+      ++scanCount;
+
+    fs.CloseScan();
+    if(scanCount != FEW_RECS/2) {
+      cout << "LT_OP scan fail, scanCount " << scanCount << endl;
+      exit(1);
+    }
+    
+    printf("********* check greater than or equal scan\n");
+    int ge_val = FEW_RECS/2;
+    scanCount = 0;
+    rc = fs.OpenScan(fh, INT, sizeof(int), offsetof(TestRec, num),
+                    GE_OP, &ge_val, NO_HINT);
+    for(int i=0; i<FEW_RECS && fs.GetNextRec(rec) == 0; ++i)
+      ++scanCount;
+
+    fs.CloseScan();
+    if(scanCount != FEW_RECS/2) {
+      cout << "GE_OP scan fail, scanCount " << scanCount << endl;
+      exit(1);
+    }
+    
+    printf("**** delete record of the whole page and then scan\n");
+    int recordPerPage = fh.GetRecordPerPage();
+    RID deleteId;
+
+    for(int i=0; i < recordPerPage; ++ i) {
+      deleteId = RID(0, i);
+      if( (rc = fh.DeleteRec(deleteId)) != 0 ){
+        printf("delete last record on one page failed\n");
+        exit(1);
+      }
+    }
+    
+    printf("********* check greater than or equal scan after delete\n");
+    rc=fs.OpenScan(fh,INT,sizeof(int),offsetof(TestRec, num),
+                        GE_OP, &ge_val, NO_HINT);
+    scanCount = 0;
+    for(int i=0; i<FEW_RECS && fs.GetNextRec(rec) == 0 ; ++ i) 
+      ++scanCount;
+   
+    if(scanCount != FEW_RECS/2 - (recordPerPage - ge_val)) {
+      cout << "GE_OP scan fail after delete, scanCount " << scanCount << endl;
+      exit(1);
+    } 
+    fs.CloseScan();
+  
+    rc = CloseFile(FILENAME, fh);
+
+    if ((rc = DestroyFile(FILENAME)))
+        return (rc);
+
+    printf("\ntest5 done ********************\n");
     return (0);
 }
