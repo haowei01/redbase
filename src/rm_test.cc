@@ -34,7 +34,7 @@ using namespace std;
 #define STRLEN      29               // length of string in testrec
 #define PROG_UNIT   50               // how frequently to give progress
                                       //   reports when adding lots of recs
-#define FEW_RECS   200                // number of records added in
+#define FEW_RECS   200              // number of records added in
 #define MANY_RECS  200000           // stress test with many records
 #define HUGE_RECS  2000000
 //
@@ -676,9 +676,11 @@ RC Test4(void)
     }
     // check if the delted slot is usable for insert
     TestRec recBuf;
+    memset(&recBuf, 0, sizeof(recBuf));
     bool insertToDelted = false;
     for(int i=0; i<totalPages; ++i) {
       RID insertId;
+
       if(fh.InsertRec((const char *) &recBuf, insertId) != 0){
         printf("cannot insert into deleted empty slot\n");
         exit(1);
@@ -693,8 +695,9 @@ RC Test4(void)
       if(insertToDelted && slotNum != 0) {
         printf("Insert Record at VPage %d, Slot %d\n", pageNum, slotNum);
         exit(1);
-      }
-    } 
+      } 
+    }
+ 
     rc = CloseFile(FILENAME, fh);
     if ((rc = DestroyFile(FILENAME)))
         return (rc);

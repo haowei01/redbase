@@ -121,7 +121,7 @@ PF_BufferMgr::PF_BufferMgr(int _numPages) : hashTable(PF_HASH_TBL_SIZE)
       if ((bufTable[i].pData = new char[pageSize]) == NULL) {
          cerr << "Not enough memory for buffer\n";
          exit(1);
-      }
+      } 
 
       memset ((void *)bufTable[i].pData, 0, pageSize);
 

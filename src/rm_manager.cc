@@ -310,6 +310,7 @@ RC RM_Manager::CloseFile (RM_FileHandle &fileHandle)
       openFile_[fileHandle.fileName_] -= 1;
   }
 
+
   if(fileHandle.headerUpdate) {
     PF_PageHandle hdrPage; 
     fileHandle.pfh_.GetFirstPage(hdrPage);
@@ -317,6 +318,10 @@ RC RM_Manager::CloseFile (RM_FileHandle &fileHandle)
     hdrPage.GetData(hdrPageData);   
 
     struct RM_FileHeaderPage fileHdr;
+    memset(&fileHdr, 0, sizeof(RM_FileHeaderPage));
+    fileHdr.nextPageDir = END_PAGE_LIST;
+    fileHdr.nextEmptyPageDir = END_PAGE_LIST;
+
     fileHdr.recordSize = fileHandle.recordSize;
     fileHdr.totalPage = fileHandle.totalPage;
     fileHdr.totalEmptyPage = fileHandle.totalEmptyPage;
@@ -333,6 +338,8 @@ RC RM_Manager::CloseFile (RM_FileHandle &fileHandle)
     fileHandle.pfh_.MarkDirty(pageNum);
     fileHandle.pfh_.UnpinPage(pageNum);
   }
+
+  fileHandle.pfh_.ForcePages();
 
   pfm_.CloseFile(fileHandle.pfh_);
   return OK_RC;
